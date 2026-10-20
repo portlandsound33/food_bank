@@ -13,6 +13,7 @@ services:
     runtime: python
     plan: free
     region: oregon
+    rootDir: rgfp          # the app lives in the rgfp/ folder of the repo
     buildCommand: pip install -r requirements.txt
     startCommand: >-
       streamlit run app.py
@@ -34,6 +35,8 @@ services:
         generateValue: true
       - key: RGFP_TZ
         value: America/Denver
+      - key: PYTHON_VERSION   # pins Python even when building from a subfolder
+        value: 3.13.5
 
 databases:
   - name: rgfp-db
