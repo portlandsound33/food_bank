@@ -1,0 +1,43 @@
+# Render Blueprint — creates the web app and its Postgres database together.
+# Docs: https://render.com/docs/yaml-spec
+#
+# Both start on Render's FREE plans so you can try it at no cost. Before real
+# client data goes in, upgrade both in the Render Dashboard:
+#   * Free Postgres EXPIRES 30 days after creation (then deleted after a grace period)
+#     and has no backups.
+#   * The free web service sleeps after 15 min idle (~1 min to wake up).
+
+services:
+  - type: web
+    name: rgfp-intake
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      streamlit run app.py
+      --server.port $PORT
+      --server.address 0.0.0.0
+      --server.headless true
+    healthCheckPath: /_stcore/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rgfp-db
+          property: connectionString
+      - key: RGFP_STAFF_PASSWORD     # you type this in when creating the Blueprint
+        sync: false
+      - key: RGFP_ADMIN_PASSWORD     # you type this in when creating the Blueprint
+        sync: false
+      - key: RGFP_KIOSK_TOKEN        # random; copy it from the Environment tab for the tablet link
+        generateValue: true
+      - key: RGFP_TZ
+        value: America/Denver
+
+databases:
+  - name: rgfp-db
+    plan: free
+    region: oregon
+    databaseName: rgfp
+    user: rgfp

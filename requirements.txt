@@ -1,0 +1,7 @@
+streamlit>=1.50
+sqlalchemy>=2.0
+psycopg[binary]>=3.2   # Postgres driver (used on Render)
+pydantic>=2.6
+qrcode[pil]>=7.4
+pandas>=2.1
+tzdata                 # time zones on Windows

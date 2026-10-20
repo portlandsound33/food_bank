@@ -1,0 +1,18 @@
+[theme]
+base = "light"
+primaryColor = "#9E3424"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#FBF7F2"
+textColor = "#2B2622"
+borderColor = "#E7DED4"
+baseRadius = "10px"
+
+[server]
+maxUploadSize = 50
+headless = true
+
+[client]
+toolbarMode = "minimal"   # hides the Deploy button
+
+[browser]
+gatherUsageStats = false
