@@ -8,8 +8,9 @@ import pandas as pd
 import streamlit as st
 
 from core import csv_import as ci
-from core import repo
-from core.config import ADMIN_PASSWORD
+from core import repo, visits
+from core.config import ADMIN_PASSWORD, MONTHLY_VISITS
+from core.qr import parse_member_code
 from core.seed import fake_clients
 from ui.theme import header, now_local
 
@@ -31,8 +32,8 @@ else:
     st.warning("Admin is unlocked because `RGFP_ADMIN_PASSWORD` isn't set. Set it before going live.",
                icon="🔓")
 
-t_over, t_seed, t_csv, t_export, t_danger = st.tabs(
-    ["📊 Overview", "🧪 Test data", "📥 Import CSV", "📤 Export", "⚠️ Danger zone"])
+t_over, t_visits, t_seed, t_csv, t_export, t_danger = st.tabs(
+    ["📊 Overview", "🗓️ Visits", "🧪 Test data", "📥 Import CSV", "📤 Export", "⚠️ Danger zone"])
 
 # --------------------------------------------------------------- overview --
 with t_over:
@@ -184,6 +185,54 @@ with t_export:
         out = repo.export_df()
         st.download_button(f"Download {len(out):,} records", out.to_csv(index=False).encode(),
                            f"rgfp_clients_{now_local():%Y%m%d_%H%M}.csv", "text/csv", type="primary")
+
+# ----------------------------------------------------------------- visits --
+with t_visits:
+    period = visits.period_of()
+    st.markdown(f"Each client gets **{MONTHLY_VISITS} visits per month**. The count refills automatically "
+                f"on the 1st (food-bank time). Current month: **{period}**.")
+
+    st.markdown("##### Set a client's visits left this month")
+    st.caption("Use this to test flagging (set 0, then check the client in on Returning Client), or to "
+               "correct a mistaken check-in.")
+    c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+    who = c1.text_input("Member # (or scan the card)", key="adm_v_who", placeholder="RGFP-000123")
+    cid = parse_member_code(who) if who else None
+    target = repo.get_client(cid) if cid is not None else None
+    if who and target is None:
+        st.warning("No member with that number.")
+    if target is not None:
+        cur = visits.status(target.client_id)
+        st.caption(f"**{target.full_name}** ({target.member_code}) — currently {cur.remaining} of "
+                   f"{cur.allowance} left, {cur.used_this_month} check-in(s) this month.")
+        n = c2.number_input("Visits left", 0, 31, value=0, step=1, key="adm_v_n")
+        if c3.button("Set", type="primary", width="stretch", key="adm_v_set"):
+            visits.set_remaining(target.client_id, int(n))
+            st.success(f"{target.full_name} now has {int(n)} visit(s) left this month.")
+            st.rerun()
+
+    st.markdown("##### Flagged check-ins this month")
+    flagged = visits.history(flagged_only=True, period=period, limit=500)
+    if flagged.empty:
+        st.caption("None so far.")
+    else:
+        st.dataframe(flagged.assign(when=flagged["checked_in_at"].dt.strftime("%Y-%m-%d %H:%M"))[
+            ["when", "member", "first_name", "last_name", "visit_number"]], hide_index=True,
+            column_config={"visit_number": "Visit # (month)"})
+    with st.expander("All check-ins this month"):
+        allc = visits.history(period=period, limit=2000)
+        st.caption(f"{len(allc):,} check-ins")
+        if not allc.empty:
+            st.dataframe(allc.assign(when=allc["checked_in_at"].dt.strftime("%Y-%m-%d %H:%M"))[
+                ["when", "member", "first_name", "last_name", "visit_number", "remaining_after", "flagged"]],
+                hide_index=True)
+
+    st.markdown("##### Reset everyone")
+    st.caption(f"Gives every client {MONTHLY_VISITS} visits for {period} right now (the check-in history "
+               "is kept). Normally unnecessary — the monthly refill is automatic.")
+    if st.button(f"Reset all clients to {MONTHLY_VISITS}", key="adm_v_reset"):
+        n = visits.reset_all()
+        st.success(f"Reset {n:,} clients.")
 
 # ------------------------------------------------------------ danger zone --
 with t_danger:

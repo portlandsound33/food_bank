@@ -74,3 +74,89 @@ def test_admin_seed():
     _by_label(at.button, "Generate").click().run()
     assert not at.exception, at.exception
     assert repo.stats()["clients"] == 12
+
+
+# ------------------------------------------------------------- two steps --
+def _step(at):
+    return at.session_state["nc.step"] if "nc.step" in at.session_state else 1
+
+
+def _fill_page1(at):
+    _by_label(at.text_input, "First name").input("Rosa")
+    _by_label(at.text_input, "Last name").input("Lucero")
+    _by_label(at.number_input, "Age").set_value(67)
+    _by_label(at.number_input, "NOT including you").set_value(1)
+    _by_label(at.number_input, "Seniors").set_value(0)
+    _by_label(at.number_input, "Adults").set_value(0)
+    _by_label(at.number_input, "Children").set_value(1)
+    return at.run()
+
+
+def test_next_validates_page1_only():
+    repo.delete_all()
+    at = _page("new_client.py").run()
+    at.button(key="nc.next").click().run()
+    assert _step(at) == 1
+    errs = " ".join(e.value for e in at.error)
+    assert "Required on page 1" in errs and "First name" in errs
+    assert "page 2" not in errs  # page-2 fields aren't complained about yet
+    _fill_page1(at)
+    at.button(key="nc.next").click().run()
+    assert not at.exception and not at.error
+    assert at.session_state["nc.step"] == 2
+    at.button(key="nc.back").click().run()
+    assert at.session_state["nc.step"] == 1
+    assert _by_label(at.text_input, "First name").value == "Rosa"  # nothing lost
+
+
+def test_next_warns_once_on_household_mismatch():
+    at = _page("new_client.py").run()
+    _fill_page1(at)
+    _by_label(at.number_input, "Children").set_value(3)  # 0+0+3 != 1
+    at.run()
+    at.button(key="nc.next").click().run()
+    assert at.warning and "add up" in " ".join(w.value for w in at.warning)
+    assert _step(at) == 1
+    at.button(key="nc.next").click().run()  # confirmed: go on
+    assert at.session_state["nc.step"] == 2
+
+
+def test_pickup_phone_error_is_caught_on_page1():
+    # AppTest can't type into the data editor, so check the page-1 validator directly.
+    from ui.client_form import validate_page1
+    errors, _ = validate_page1({"first_name": "A", "last_name": "B", "age": 30, "household_others": 0,
+                                "others_pickup": True,
+                                "pickup_persons": [{"name": "Kim", "phone": "555"}]})
+    assert errors and "Pick-up person #1 phone" in errors[0] and "page 1" in errors[0]
+
+
+# ---------------------------------------------------------------- check-in --
+def test_checkin_and_flag_on_returning_client():
+    from core import visits
+    repo.delete_all()
+    cid = repo.bulk_create(fake_clients(1, seed=4), "seed")[0]
+    visits.set_remaining(cid, 1)
+    at = _page("returning_client.py").run()
+    at.text_input[0].input(f"RGFP-{cid:06d}")
+    at.button[0].click().run()
+    at.button(key="rc_checkin").click().run()
+    assert not at.exception, at.exception
+    assert any("Checked in" in s.value for s in at.success)
+    # second check-in today needs a confirming click, then is flagged (0 left)
+    at.button(key="rc_checkin").click().run()
+    assert any("already checked in today" in w.value for w in at.warning)
+    at.button(key="rc_checkin").click().run()
+    assert any("FLAGGED" in e.value for e in at.error)
+    assert visits.status(cid).flagged_this_month == 1
+
+
+def test_admin_set_visits():
+    from core import visits
+    repo.delete_all()
+    cid = repo.bulk_create(fake_clients(1, seed=5), "seed")[0]
+    at = _page("admin.py").run()
+    at.text_input(key="adm_v_who").input(f"RGFP-{cid:06d}").run()
+    at.number_input(key="adm_v_n").set_value(0)
+    at.button(key="adm_v_set").click().run()
+    assert not at.exception, at.exception
+    assert visits.status(cid).remaining == 0

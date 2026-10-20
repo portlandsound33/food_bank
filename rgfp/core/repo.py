@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import Select, delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from .db import Client, format_member_code, session_scope
+from .db import CheckIn, Client, format_member_code, session_scope
 from .qr import make_qr_png, parse_member_code
 from .schemas import ClientIn
 
@@ -85,6 +85,7 @@ def bulk_create(items: Iterable[ClientIn], source: str, with_qr: bool = True,
 def delete_all() -> int:
     with session_scope() as s:
         n = s.scalar(select(func.count()).select_from(Client)) or 0
+        s.execute(delete(CheckIn))
         s.execute(delete(Client))
         return n
 

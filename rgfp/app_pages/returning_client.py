@@ -5,7 +5,7 @@ from datetime import datetime, time
 
 import streamlit as st
 
-from core import repo
+from core import repo, visits
 from core.config import TZ
 from core.qr import parse_member_code
 from ui import client_form as cf
@@ -24,11 +24,14 @@ def open_client(client_id: int) -> bool:
     cf.load_form(NS, repo.to_client_in(row), row.signature_png)
     ss["rc_client_id"] = client_id
     ss.pop("rc_results", None)
+    ss.pop("rc_checkin_result", None)
+    ss.pop("rc_confirm_again", None)
     return True
 
 
 def close_client() -> None:
     ss.pop("rc_client_id", None)
+    ss.pop("rc_checkin_result", None)
     cf.clear_form(NS, defaults=False)
 
 
@@ -84,36 +87,81 @@ if client is None:
     close_client()
     st.rerun()
 
+def _stamp(dt) -> str:  # noqa: ANN001
+    d = dt.astimezone(TZ)
+    return f"{fmt_date(d, year=True)} {fmt_time(d)}"
+
+
+def visits_panel(client_id: int) -> None:
+    vs = visits.status(client_id)
+    cls = "out" if vs.exhausted else ("low" if vs.remaining == 1 else "ok")
+    sub = ("No visits left — next check-in will be flagged" if vs.exhausted
+           else f"of {vs.allowance} visits left this month")
+    st.markdown(f'<div class="rg-visits {cls}"><div class="big">{vs.remaining}</div>'
+                f'<div>{sub}</div></div>', unsafe_allow_html=True)
+
+    today = now_local().date()
+    already_today = vs.last_checkin is not None and vs.last_checkin.astimezone(TZ).date() == today
+    if already_today:
+        st.caption(f"⚠️ Already checked in today at {fmt_time(vs.last_checkin.astimezone(TZ))}.")
+    label = "✔ Check in again" if already_today else "✔ Check in"
+    if st.button(label, type="primary", width="stretch", key="rc_checkin"):
+        if already_today and not ss.get("rc_confirm_again"):
+            ss["rc_confirm_again"] = True
+            st.warning("This client already checked in today. Press **Check in again** to record "
+                       "another visit.")
+        else:
+            ss.pop("rc_confirm_again", None)
+            ss["rc_checkin_result"] = visits.check_in(client_id)
+            st.rerun()
+    if vs.flagged_this_month:
+        st.caption(f"🚩 {vs.flagged_this_month} flagged check-in(s) this month.")
+
+
 main, side = st.columns([3.2, 1], gap="large")
 with side:
+    visits_panel(client.client_id)
     member_panel(client, "rc")
-    update = st.button("💾 Update Client", type="primary", width="stretch")
+    update = st.button("💾 Update Client", width="stretch")
     st.button("✖ Close record", on_click=close_client, width="stretch")
     msgs = st.container()
-    created = (f"{fmt_date(client.created_at.astimezone(TZ), year=True)} {fmt_time(client.created_at.astimezone(TZ))}"
-               if client.created_at else "—")
-    updated = (f"{fmt_date(client.updated_at.astimezone(TZ), year=True)} {fmt_time(client.updated_at.astimezone(TZ))}"
-               if client.updated_at else "—")
+    created = _stamp(client.created_at) if client.created_at else "—"
+    updated = _stamp(client.updated_at) if client.updated_at else "—"
     st.caption(f"Created {created} · via {client.source}\n\nLast updated {updated}"
                + (f"\n\nLegacy ID: {client.legacy_id}" if client.legacy_id else ""))
 
 with main:
     st.markdown(f"### {client.full_name}")
-    p1_tab, p2_tab = st.tabs(["**Page 1 ·** Registration", "**Page 2 ·** TEFAP eligibility & signature"])
-    with p1_tab:
-        p1 = cf.render_page1(NS)
-    with p2_tab:
-        p2 = cf.render_page2(NS, p1)
-        new_sig = cf.render_signature(NS)
-        notes = cf.render_staff_notes(NS)
+    res = ss.get("rc_checkin_result")
+    if res is not None:
+        ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(res.visit_number, f"{res.visit_number}th")
+        if res.flagged:
+            st.error(f"🚩 **FLAGGED — {ordinal} visit this month.** {client.first_name} has no visits left "
+                     f"({res.allowance} per month). The check-in was recorded and flagged for review.")
+        else:
+            st.success(f"✔ Checked in — {ordinal} visit this month. "
+                       f"{res.remaining} of {res.allowance} visits left.")
+    with st.expander("Visit history"):
+        hist = visits.history(client_id=client.client_id, limit=24)
+        if hist.empty:
+            st.caption("No check-ins yet.")
+        else:
+            st.dataframe(
+                hist.assign(when=hist["checked_in_at"].map(_stamp))[
+                    ["when", "visit_number", "remaining_after", "flagged"]],
+                hide_index=True,
+                column_config={"visit_number": "Visit # (month)", "remaining_after": "Left after",
+                               "flagged": st.column_config.CheckboxColumn("Flagged")})
+    form = cf.render_two_step(NS, submit_label="💾 Update Client", staff_notes=True)
 
-if update:
-    data, errors = cf.build(NS, p1, p2, notes)
-    with msgs:
+if update or form.submitted:
+    out = msgs if update else form.messages
+    data, errors = cf.build(NS, form.p1, form.p2, form.notes)
+    with out:
         if errors:
             st.error("Please fix:\n\n" + "\n".join(f"- {e}" for e in errors))
         else:
-            repo.update_client(client.client_id, data, new_sig)
+            repo.update_client(client.client_id, data, form.new_sig)
             for w in data.warnings():
                 st.toast(w, icon="⚠️")
             st.toast(f"Updated {data.full_name}", icon="✅")

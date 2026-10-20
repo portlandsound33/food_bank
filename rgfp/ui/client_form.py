@@ -7,6 +7,7 @@ session_state) and fresh ones are created with the new values.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -30,6 +31,10 @@ LABELS = {
     "signature_date": "Signature date", "notes": "Notes",
 }
 REQUIRED = ["first_name", "last_name", "age", "household_others", "state", "zip", "county", "phone"]
+PAGE1_FIELDS = {"intake_date", "first_name", "middle_initial", "last_name", "age", "is_senior", "is_18_59",
+                "household_others", "seniors_in_hh", "adults_in_hh", "children_in_hh", "others_pickup",
+                "pickup_persons", "simc_number"}
+PAGE_TITLES = {1: "Registration", 2: "TEFAP eligibility & signature"}
 YES_NO = [True, False]
 
 
@@ -299,21 +304,130 @@ def render_staff_notes(ns: str) -> str | None:
 
 
 # ------------------------------------------------------------- validation --
-def build(ns: str, p1: dict, p2: dict, notes: str | None = None) -> tuple[ClientIn | None, list[str]]:
-    raw = {**p1, **p2, "signature_date": st.session_state.get(k(ns, "signature_date")), "notes": notes}
-    missing = [LABELS[f] for f in REQUIRED if raw.get(f) in (None, "")]
+def _page_of(field: str) -> int:
+    return 1 if field in PAGE1_FIELDS else 2
+
+
+def _errors(raw: dict, fields: set[str] | None) -> tuple[ClientIn | None, list[str]]:
+    """Validate ``raw``; report only problems in ``fields`` (None = all), tagged with their page."""
+    want = (lambda f: True) if fields is None else (lambda f: f in fields)
+    missing = [f for f in REQUIRED if want(f) and raw.get(f) in (None, "")]
+    out: list[str] = []
+    for page in (1, 2):
+        names = [LABELS[f] for f in missing if _page_of(f) == page]
+        if names:
+            out.append(f"**Required on page {page}:** {', '.join(names)}")
     try:
-        data = ClientIn.model_validate(raw)
+        return (None if missing else ClientIn.model_validate(raw)), out
     except ValidationError as e:
-        errs = []
         for err in e.errors():
             f = str(err["loc"][0]) if err["loc"] else "record"
-            if f in REQUIRED and raw.get(f) in (None, ""):
-                continue  # reported once as "missing" below
+            if not want(f) or f in missing:
+                continue
+            where = ""
+            if f == "pickup_persons" and len(err["loc"]) >= 3:
+                where = f" #{int(err['loc'][1]) + 1} {err['loc'][2]}"
             msg = err["msg"].removeprefix("Value error, ")
-            errs.append(f"**{LABELS.get(f, f)}**: {msg}")
-        return None, ([f"Required: {', '.join(missing)}"] if missing else []) + errs
-    return (None, [f"Required: {', '.join(missing)}"]) if missing else (data, [])
+            out.append(f"**{LABELS.get(f, f)}{where}** (page {_page_of(f)}): {msg}")
+        return None, out
+
+
+def validate_page1(p1: dict) -> tuple[list[str], list[str]]:
+    """(errors, warnings) for page 1 only, so mistakes get fixed before page 2."""
+    data, errors = _errors(p1, PAGE1_FIELDS)
+    if errors or data is None:
+        return errors, []
+    return [], data.warnings()  # page-2 fields are still empty, so only page-1 warnings fire
+
+
+def build(ns: str, p1: dict, p2: dict, notes: str | None = None) -> tuple[ClientIn | None, list[str]]:
+    raw = {**p1, **p2, "signature_date": st.session_state.get(k(ns, "signature_date")), "notes": notes}
+    data, errors = _errors(raw, None)
+    return (data, []) if data is not None and not errors else (None, errors)
+
+
+# ------------------------------------------------------------- two steps --
+def current_step(ns: str) -> int:
+    return st.session_state.get(f"{ns}.step", 1)
+
+
+def go_to(ns: str, step: int) -> None:
+    st.session_state[f"{ns}.step"] = step
+    st.session_state[f"{ns}.scroll_top"] = True
+
+
+def _progress(ns: str) -> None:
+    cur = current_step(ns)
+    pills = "".join(
+        f'<div class="rg-step{" on" if n == cur else (" done" if n < cur else "")}">'
+        f'<span class="n">{"✓" if n < cur else n}</span><span>Page {n} · {t}</span></div>'
+        for n, t in PAGE_TITLES.items())
+    st.markdown(f'<div class="rg-steps">{pills}</div>', unsafe_allow_html=True)
+
+
+def _scroll_to_top_if_requested(ns: str) -> None:
+    if st.session_state.pop(f"{ns}.scroll_top", False):
+        nonce = st.session_state[f"{ns}.nonce"] * 100 + current_step(ns)
+        st.html(
+            f"<script>/* {nonce} */"
+            "for (const sel of ['[data-testid=stMain]', '.stMain', 'section.main']) {"
+            "  const el = document.querySelector(sel); if (el) el.scrollTo({top: 0}); }"
+            "window.scrollTo({top: 0});</script>",
+            unsafe_allow_javascript=True,
+        )
+
+
+@dataclass
+class FormResult:
+    p1: dict[str, Any]
+    p2: dict[str, Any]
+    new_sig: bytes | None
+    notes: str | None
+    submitted: bool
+    messages: Any  # container just above the submit button, for save errors
+
+
+def render_two_step(ns: str, *, submit_label: str, staff_notes: bool) -> FormResult:
+    """Page 1 → (validate) → page 2 → submit. Both pages are always rendered so nothing typed
+    is lost; the inactive one is hidden with CSS."""
+    ss = st.session_state
+    cur = current_step(ns)
+    hide = 2 if cur == 1 else 1
+    st.markdown(f"<style>.st-key-{ns}_page{hide}{{display:none}}</style>", unsafe_allow_html=True)
+    _scroll_to_top_if_requested(ns)
+    _progress(ns)
+
+    with st.container(key=f"{ns}_page1"):
+        p1 = render_page1(ns)
+        msg = st.container()
+        _, right = st.columns([2, 1])
+        nxt = right.button("Next: Page 2  →", type="primary", width="stretch", key=f"{ns}.next")
+    with st.container(key=f"{ns}_page2"):
+        top_back = st.button("←  Back to page 1", type="tertiary", key=f"{ns}.back_top")
+        p2 = render_page2(ns, p1)
+        new_sig = render_signature(ns)
+        notes = render_staff_notes(ns) if staff_notes else None
+        submit_msgs = st.container()
+        left, _, right = st.columns([1, 1, 1.2])
+        back = left.button("←  Back to page 1", width="stretch", key=f"{ns}.back")
+        submitted = right.button(submit_label, type="primary", width="stretch", key=f"{ns}.submit")
+
+    if nxt:
+        errors, warnings = validate_page1(p1)
+        if errors:
+            ss.pop(f"{ns}.p1_warned", None)
+            msg.error("Please fix these before going on:\n\n" + "\n".join(f"- {e}" for e in errors))
+        elif warnings and ss.get(f"{ns}.p1_warned") != warnings:
+            ss[f"{ns}.p1_warned"] = warnings
+            msg.warning("Please double-check:\n\n" + "\n".join(f"- {w}" for w in warnings)
+                        + "\n\nFix it above, or press **Next** again if it's correct.")
+        else:
+            go_to(ns, 2)
+            st.rerun()
+    if back or top_back:
+        go_to(ns, 1)
+        st.rerun()
+    return FormResult(p1, p2, new_sig, notes, submitted, submit_msgs)
 
 
 def form_dirty(ns: str) -> bool:

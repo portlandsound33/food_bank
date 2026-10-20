@@ -100,6 +100,9 @@ git commit -m "Describe the change"
 git push
 ```
 
+Database changes in new versions (such as the visit counter) are applied automatically when the
+app starts, and existing records are kept.
+
 ## 7. Moving data you entered locally
 
 On your PC, go to **Admin → Export → Download** to get a CSV. On Render, go to
@@ -128,6 +131,7 @@ original numbers.
 | `RGFP_ADMIN_PASSWORD` | You | Extra lock on Admin |
 | `RGFP_KIOSK_TOKEN` | Blueprint (random) | Secret in the tablet link |
 | `RGFP_TZ` | Blueprint | Clock time zone (`America/Denver`) |
+| `RGFP_MONTHLY_VISITS` | You (optional) | Visits per month before check-ins get flagged (default 3) |
 
 The shared staff password is a reasonable start. If you later want individual logins
 (who changed what), Streamlit supports Google or Microsoft sign-in through OIDC.

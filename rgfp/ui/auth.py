@@ -12,8 +12,8 @@ def _same(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
 
 
-def require_access() -> bool:
-    """Returns True for a kiosk session, False for staff. Stops the script until access is granted."""
+def resolve_kiosk() -> bool:
+    """True if this browser session is the client tablet (valid ?kiosk= link). Stops on a bad link."""
     ss = st.session_state
 
     if "kiosk" not in ss:
@@ -30,19 +30,26 @@ def require_access() -> bool:
                 st.error("This tablet link isn't valid. Ask a staff member for the current link.")
                 st.stop()
             ss["kiosk"] = True
+    return ss["kiosk"]
 
-    if ss["kiosk"]:
-        return True
+
+def staff_signed_in() -> bool:
+    return bool(st.session_state.get("staff_ok")) or not STAFF_PASSWORD
+
+
+def require_staff() -> None:
+    """Shows the staff sign-in and stops the script until the password is entered."""
+    ss = st.session_state
 
     if not STAFF_PASSWORD:
         if ON_RENDER:
             st.error("Staff login isn't configured. In Render, set the **RGFP_STAFF_PASSWORD** "
                      "environment variable, then redeploy.")
             st.stop()
-        return False  # local development
+        return  # local development
 
     if ss.get("staff_ok"):
-        return False
+        return
 
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:

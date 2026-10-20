@@ -36,6 +36,9 @@ ORG_NAME = "Rio Grande Food Project"
 MEMBER_PREFIX = os.environ.get("RGFP_MEMBER_PREFIX", "RGFP")
 FORM_VERSION = "Updated 06/23/2026"
 
+# Visits allowed per calendar month (in TZ). The counter refills on the 1st.
+MONTHLY_VISITS = int(os.environ.get("RGFP_MONTHLY_VISITS", "3"))
+
 # ---- Access control -------------------------------------------------------
 # Staff password: required for Returning Client / New Client (staff) / Admin.
 # Admin password: an extra lock on the Admin page.

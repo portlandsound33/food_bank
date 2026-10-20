@@ -54,6 +54,21 @@ table.tefap tr td.hit{background:var(--teal) !important; color:#fff !important; 
 /* member badge */
 .rg-member{border:2px dashed var(--teal); border-radius:14px; padding:.8rem; text-align:center; background:#fff}
 .rg-member .code{font-size:1.3rem; white-space:nowrap; font-weight:700; color:var(--brick); letter-spacing:1px}
+/* two-step progress */
+.rg-steps{display:flex; gap:.5rem; margin:.2rem 0 .8rem}
+.rg-step{flex:1; display:flex; align-items:center; gap:.55rem; padding:.55rem .8rem; border-radius:10px;
+  border:1px solid var(--line); color:var(--muted); background:#fff; font-weight:600}
+.rg-step .n{width:1.7rem; height:1.7rem; border-radius:999px; display:inline-flex; align-items:center;
+  justify-content:center; background:var(--line); color:var(--ink); font-size:.9rem}
+.rg-step.on{border-color:var(--brick); color:var(--ink); background:var(--brick-soft)}
+.rg-step.on .n{background:var(--brick); color:#fff}
+.rg-step.done .n{background:var(--teal); color:#fff}
+/* visit allowance */
+.rg-visits{border-radius:14px; padding:.7rem .8rem; text-align:center; margin:.4rem 0}
+.rg-visits .big{font-size:2rem; font-weight:700; line-height:1}
+.rg-visits.ok{background:var(--teal-soft); color:#0f5355}
+.rg-visits.low{background:#FFF4D6; color:#7a5300}
+.rg-visits.out{background:#FDE2DE; color:#8f1d10; border:2px solid #c2412d}
 /* bigger touch targets for the tablet */
 .stButton>button, .stDownloadButton>button, .stFormSubmitButton>button{min-height:2.9rem; border-radius:10px; font-weight:700}
 div[data-testid="stRadio"] label{padding-right:.6rem}

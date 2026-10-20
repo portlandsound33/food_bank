@@ -10,13 +10,13 @@ returning clients, and an Admin area for test data and CSV import from other sys
 pip install -r requirements.txt -r requirements-dev.txt
 streamlit run app.py                 # staff:  http://<host>:8501
                                      # tablet: http://<host>:8501/?kiosk=1
-python -m pytest -q                  # 17 tests incl. headless page tests
+python -m pytest -q                  # 31 tests incl. headless page tests
 DATABASE_URL=postgresql://user@host/throwaway_db python -m pytest -q   # same tests on Postgres
 ```
 
 Settings (env vars, see `core/config.py`): `DATABASE_URL` or `RGFP_DB_URL` (default
 `sqlite:///data/rgfp.db`), `RGFP_TZ` (default `America/Denver`), `RGFP_STAFF_PASSWORD`,
-`RGFP_ADMIN_PASSWORD`, `RGFP_KIOSK_TOKEN`, `RGFP_MEMBER_PREFIX`. With no passwords set the
+`RGFP_ADMIN_PASSWORD`, `RGFP_KIOSK_TOKEN`, `RGFP_MEMBER_PREFIX`, `RGFP_MONTHLY_VISITS` (default 3). With no passwords set the
 app is open (local development); on Render it refuses to run without a staff password.
 Drop your logo at `assets/logo.png`.
 
@@ -60,6 +60,18 @@ samples/legacy_export_sample.csv   messy CSV to try the importer
 * **Pick-up people** are a list of `{name, phone}` stored as JSON in the flat row.
 * **Clock** uses server time in `America/Denver` (MST in winter, MDT in summer, matching the
   wall clock). Set `RGFP_TZ=America/Phoenix` for fixed MST year-round.
+* **Monthly visits:** each client has `visits_remaining` plus the month it belongs to
+  (`visits_period`, e.g. `2026-10`). No scheduled job is needed: a count from an earlier month
+  reads as the full allowance (`RGFP_MONTHLY_VISITS`, default 3), so it refills on the 1st in
+  food-bank time. **Check in** on Returning Client uses one visit; with none left the check-in is
+  still recorded but **flagged**. Every check-in is logged in a `checkins` table (`core/visits.py`).
+  Admin → Visits sets a client's count (e.g. 0 to test flagging), lists flagged check-ins, and can
+  reset everyone. Editing the form never changes the visit count.
+* **Schema upgrades:** new columns are added to an existing database automatically at startup
+  (`core/db.py: _ADDED_COLUMNS`), so deploying a new version keeps all existing records.
+* **Two-step form:** page 1 is validated (errors and household-count warnings) before **Next**
+  moves to page 2; both pages stay rendered (the inactive one hidden) so nothing typed is lost
+  when going back and forth.
 * **Tablet flow:** the tablet opens `?kiosk=1` (no sidebar, no staff screens). The client
   submits; the record appears under *Registered today* on the clerk's Returning Client
   screen, where they review it and print the card.
@@ -79,5 +91,4 @@ samples/legacy_export_sample.csv   messy CSV to try the importer
 
 * Real auth/roles before this holds live PII; HTTPS on the LAN.
 * Live mirroring of the clerk's screen to the tablet (would need a shared drafts table).
-* Visit logging (a `visits` table keyed by `client_id`) — the first non-flat table you'll want.
 * Postgres via `RGFP_DB_URL` if more than a few workstations write at once.

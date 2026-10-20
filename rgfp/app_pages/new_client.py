@@ -48,39 +48,28 @@ if kiosk:
 else:
     main, side = st.columns([3.2, 1], gap="large")
 
+side_save, paper_ok, side_msgs = False, False, None
 if side is not None:
     with side:
-        save = st.button("💾 Save New Client", type="primary", width="stretch")
+        side_save = st.button("💾 Save New Client", type="primary", width="stretch")
         st.button("🧹 Clear form", on_click=_start_next, width="stretch")
         paper_ok = st.checkbox("Client signed a paper copy", key="nc_paper",
                                help="Allows saving without a signature image.")
-        msgs = st.container()
+        side_msgs = st.container()
+        st.caption("Fields marked * are required. Page 1 is checked before moving to page 2.")
 
 with main:
-    p1_tab, p2_tab = st.tabs(["**Page 1 ·** Registration", "**Page 2 ·** TEFAP eligibility & signature"])
-    with p1_tab:
-        p1 = cf.render_page1(NS)
-        st.info("Next: open **Page 2** (tab above) for TEFAP eligibility and signature.", icon="➡️")
-    with p2_tab:
-        p2 = cf.render_page2(NS, p1)
-        new_sig = cf.render_signature(NS)
-    notes = None
-    if not kiosk:
-        with p2_tab:
-            notes = cf.render_staff_notes(NS)
-
-if kiosk:
-    st.divider()
-    save = st.button("✅ Submit my registration", type="primary", width="stretch")
-    paper_ok = False
-    msgs = st.container()
+    form = cf.render_two_step(
+        NS, submit_label="✅ Submit my registration" if kiosk else "💾 Save New Client",
+        staff_notes=not kiosk)
 
 # ------------------------------------------------------------------ save --
-if save:
-    data, errors = cf.build(NS, p1, p2, notes)
-    if not new_sig and not paper_ok:
-        errors.append("**Signature**: please add a signature photo in Section 3 (Page 2).")
-    with msgs:
+if form.submitted or side_save:
+    out = side_msgs if (side_save and side_msgs is not None) else form.messages
+    data, errors = cf.build(NS, form.p1, form.p2, form.notes)
+    if not form.new_sig and not paper_ok:
+        errors.append("**Signature** (page 2): please add a signature photo in Section 3.")
+    with out:
         if errors:
             st.error("Please fix the following before saving:\n\n" + "\n".join(f"- {e}" for e in errors))
         else:
@@ -93,9 +82,6 @@ if save:
             else:
                 for w in data.warnings():
                     st.toast(w, icon="⚠️")
-                row = repo.create_client(data, new_sig, source="kiosk" if kiosk else "intake")
+                row = repo.create_client(data, form.new_sig, source="kiosk" if kiosk else "intake")
                 ss["nc_saved_id"] = row.client_id
                 st.rerun()
-elif side is not None:
-    with msgs:
-        st.caption("Fields marked * are required. Page 2 holds TEFAP + signature.")

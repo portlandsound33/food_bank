@@ -11,7 +11,8 @@ from functools import lru_cache
 from typing import Iterator
 
 from sqlalchemy import (
-    JSON, Boolean, Date, DateTime, Index, Integer, LargeBinary, String, Text, create_engine, event,
+    JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, create_engine,
+    event, inspect, text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import TypeDecorator
@@ -88,6 +89,12 @@ class Client(Base):
 
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # Monthly visit allowance. Not part of the form: only check-ins and Admin change these.
+    # visits_period is the month ("2026-10") that visits_remaining belongs to; when a new
+    # month starts, the first read/check-in treats the count as reset to the full allowance.
+    visits_remaining: Mapped[int | None] = mapped_column(Integer)
+    visits_period: Mapped[str | None] = mapped_column(String(7))
+
     __table_args__ = (
         Index("ix_clients_name", "last_name", "first_name"),
         Index("ix_clients_phone", "phone"),
@@ -107,6 +114,21 @@ class Client(Base):
     def full_name(self) -> str:
         mi = f" {self.middle_initial}." if self.middle_initial else ""
         return f"{self.first_name}{mi} {self.last_name}"
+
+
+class CheckIn(Base):
+    """One row per check-in at a distribution (an audit trail for the visit counter)."""
+
+    __tablename__ = "checkins"
+
+    checkin_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.client_id", ondelete="CASCADE"), index=True)
+    checked_in_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    period: Mapped[str] = mapped_column(String(7), index=True)   # "2026-10"
+    visit_number: Mapped[int] = mapped_column(Integer)           # 1st, 2nd, 3rd, 4th… this month
+    remaining_after: Mapped[int] = mapped_column(Integer)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    note: Mapped[str | None] = mapped_column(String(200))
 
 
 def format_member_code(client_id: int) -> str:
@@ -131,7 +153,25 @@ def get_engine(url: str = DB_URL) -> Engine:
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+# Columns added after the first release. create_all() makes new tables but never alters
+# existing ones, so a database created by an older version gets these added here.
+_ADDED_COLUMNS = {
+    "clients": {"visits_remaining": "INTEGER", "visits_period": "VARCHAR(7)"},
+}
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    insp = inspect(engine)
+    for table, cols in _ADDED_COLUMNS.items():
+        have = {c["name"] for c in insp.get_columns(table)}
+        with engine.begin() as conn:
+            for name, ddl in cols.items():
+                if name not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 @lru_cache(maxsize=4)
