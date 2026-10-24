@@ -32,8 +32,8 @@ else:
     st.warning("Admin is unlocked because `RGFP_ADMIN_PASSWORD` isn't set. Set it before going live.",
                icon="🔓")
 
-t_over, t_visits, t_seed, t_csv, t_export, t_danger = st.tabs(
-    ["📊 Overview", "🗓️ Visits", "🧪 Test data", "📥 Import CSV", "📤 Export", "⚠️ Danger zone"])
+t_over, t_visits, t_backup, t_seed, t_csv, t_export, t_danger = st.tabs(
+    ["📊 Overview", "🗓️ Visits", "☁️ Backups", "🧪 Test data", "📥 Import CSV", "📤 Export", "⚠️ Danger zone"])
 
 # --------------------------------------------------------------- overview --
 with t_over:
@@ -233,6 +233,11 @@ with t_visits:
     if st.button(f"Reset all clients to {MONTHLY_VISITS}", key="adm_v_reset"):
         n = visits.reset_all()
         st.success(f"Reset {n:,} clients.")
+
+# ---------------------------------------------------------------- backups --
+with t_backup:
+    from ui import backup_admin
+    backup_admin.render()
 
 # ------------------------------------------------------------ danger zone --
 with t_danger:

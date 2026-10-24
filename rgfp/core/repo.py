@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import Select, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from .config import TZ
 from .db import CheckIn, Client, format_member_code, session_scope
 from .qr import make_qr_png, parse_member_code
 from .schemas import ClientIn
@@ -198,3 +199,60 @@ def export_df() -> pd.DataFrame:
             lambda v: "; ".join(f"{p.get('name')} {p.get('phone') or ''}".strip() for p in (v or []))
         )
     return df
+
+
+# ------------------------------------------------------------- browse all --
+def all_clients_df(now: datetime | None = None) -> pd.DataFrame:
+    """Every client (no images) with visit status, for the All Clients page. ~10k rows is fine."""
+    from .config import MONTHLY_VISITS
+    from .visits import period_of
+
+    period = period_of(now)
+    last_ci = (select(CheckIn.client_id, func.max(CheckIn.checked_in_at).label("last_checkin"))
+               .group_by(CheckIn.client_id).subquery())
+    flagged = (select(CheckIn.client_id, func.count().label("flagged_month"))
+               .where(CheckIn.flagged.is_(True), CheckIn.period == period)
+               .group_by(CheckIn.client_id).subquery())
+    q = (select(Client.client_id, Client.first_name, Client.middle_initial, Client.last_name, Client.age,
+                Client.phone, Client.household_others, Client.county, Client.zip, Client.simc_number,
+                Client.tefap_auto_eligible, Client.created_at, Client.source,
+                Client.visits_remaining, Client.visits_period,
+                last_ci.c.last_checkin, func.coalesce(flagged.c.flagged_month, 0).label("flagged_month"))
+         .outerjoin(last_ci, last_ci.c.client_id == Client.client_id)
+         .outerjoin(flagged, flagged.c.client_id == Client.client_id)
+         .order_by(Client.last_name, Client.first_name, Client.client_id))
+    with session_scope() as s:
+        rows = s.execute(q).all()
+    df = pd.DataFrame(rows, columns=[c for c in rows[0]._fields] if rows else [
+        "client_id", "first_name", "middle_initial", "last_name", "age", "phone", "household_others",
+        "county", "zip", "simc_number", "tefap_auto_eligible", "created_at", "source", "visits_remaining",
+        "visits_period", "last_checkin", "flagged_month"])
+    df.insert(0, "member", df["client_id"].map(format_member_code))
+    df["name"] = (df["first_name"].fillna("") + " "
+                  + df["middle_initial"].fillna("").map(lambda m: f"{m}. " if m else "")
+                  + df["last_name"].fillna(""))
+    df["household"] = df["household_others"].map(lambda v: None if pd.isna(v) else int(v) + 1).astype("Int64")
+    current = df["visits_period"] == period
+    df["visits_left"] = df["visits_remaining"].where(current & df["visits_remaining"].notna(),
+                                                     MONTHLY_VISITS).astype("Int64")
+    for col in ("created_at", "last_checkin"):
+        df[col] = pd.to_datetime(df[col], utc=True).dt.tz_convert(TZ)
+    return df
+
+
+def filter_clients(df: pd.DataFrame, text: str = "") -> pd.DataFrame:
+    """Keep rows where every word matches name, member #, phone, SIMC #, ZIP or county."""
+    words = [w.lower() for w in (text or "").split()]
+    if not words or df.empty:
+        return df
+    hay = (df["member"] + " " + df["name"] + " " + df["phone"].fillna("") + " "
+           + df["phone"].fillna("").str.replace("-", "", regex=False) + " " + df["simc_number"].fillna("")
+           + " " + df["zip"].fillna("") + " " + df["county"].fillna("")).str.lower()
+    mask = pd.Series(True, index=df.index)
+    for w in words:
+        cid = parse_member_code(w)
+        m = hay.str.contains(w, regex=False)
+        if cid is not None:
+            m |= df["client_id"] == cid
+        mask &= m
+    return df[mask]

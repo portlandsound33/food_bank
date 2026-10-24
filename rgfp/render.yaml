@@ -33,6 +33,8 @@ services:
         sync: false
       - key: RGFP_KIOSK_TOKEN        # random; copy it from the Environment tab for the tablet link
         generateValue: true
+      - key: RGFP_SECRET_KEY        # random; encrypts the GitHub backup token stored in the database
+        generateValue: true
       - key: RGFP_TZ
         value: America/Denver
       - key: PYTHON_VERSION   # pins Python even when building from a subfolder

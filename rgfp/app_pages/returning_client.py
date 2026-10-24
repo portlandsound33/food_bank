@@ -35,14 +35,21 @@ def close_client() -> None:
     cf.clear_form(NS, defaults=False)
 
 
+# Opened from the All Clients page
+if (req := ss.pop("rc_open_request", None)) is not None:
+    open_client(req)
+
 # ---------------------------------------------------------------- lookup --
-with st.form("scan", clear_on_submit=True, border=False):
-    c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
+f_col, b_col = st.columns([6, 1.1], vertical_alignment="bottom")
+with f_col, st.form("scan", clear_on_submit=True, border=False):
+    c1, c2 = st.columns([5, 1.2], vertical_alignment="bottom")
     scanned = c1.text_input(
         "Scan card, or search by member #, name, phone or SIMC #",
         placeholder="Click here, then scan the QR code  ·  or type e.g. 'garcia 505'",
     )
     go = c2.form_submit_button("🔎 Find", type="primary", width="stretch")
+if b_col.button("📋 Browse all", width="stretch", help="See and search every client record"):
+    st.switch_page("app_pages/all_clients.py")
 
 if go and scanned.strip():
     cid = parse_member_code(scanned)

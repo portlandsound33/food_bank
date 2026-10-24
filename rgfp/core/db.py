@@ -131,6 +131,32 @@ class CheckIn(Base):
     note: Mapped[str | None] = mapped_column(String(200))
 
 
+class AppSetting(Base):
+    """Small key/value store for settings made in the Admin GUI (survives restarts)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+
+
+class BackupRun(Base):
+    """One row per backup attempt, shown in Admin → Backups."""
+
+    __tablename__ = "backup_runs"
+
+    run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    trigger: Mapped[str] = mapped_column(String(20))          # scheduled | manual
+    ok: Mapped[bool | None] = mapped_column(Boolean)
+    message: Mapped[str | None] = mapped_column(Text)
+    commit_url: Mapped[str | None] = mapped_column(String(300))
+    clients: Mapped[int | None] = mapped_column(Integer)
+    checkins: Mapped[int | None] = mapped_column(Integer)
+    signatures_uploaded: Mapped[int | None] = mapped_column(Integer)
+
+
 def format_member_code(client_id: int) -> str:
     return f"{MEMBER_PREFIX}-{client_id:06d}"
 

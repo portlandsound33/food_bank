@@ -5,3 +5,5 @@ pydantic>=2.6
 qrcode[pil]>=7.4
 pandas>=2.1
 tzdata                 # time zones on Windows
+cryptography>=42       # encrypts the GitHub backup token at rest
+requests>=2.31         # GitHub API (backups)

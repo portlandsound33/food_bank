@@ -13,7 +13,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core import repo  # noqa: E402
+from core import backup, repo  # noqa: E402
 from core.config import KIOSK_TOKEN  # noqa: E402
 from ui.auth import require_staff, resolve_kiosk, staff_signed_in  # noqa: E402
 from ui.theme import inject_css  # noqa: E402
@@ -21,6 +21,7 @@ from ui.theme import inject_css  # noqa: E402
 st.set_page_config(page_title="RGFP Intake", page_icon="🥫", layout="wide",
                    initial_sidebar_state="auto")
 inject_css()
+backup.start_scheduler()  # once per server process: daily GitHub backups, if set up in Admin
 
 ss = st.session_state
 kiosk = resolve_kiosk()
@@ -38,6 +39,7 @@ pages = {
     "Intake": [
         st.Page("app_pages/returning_client.py", title="Returning Client", icon="🔁"),
         new_client,
+        st.Page("app_pages/all_clients.py", title="All Clients", icon="📋"),
     ],
     "Admin": [st.Page("app_pages/admin.py", title="Admin", icon="🛠️")],
 }

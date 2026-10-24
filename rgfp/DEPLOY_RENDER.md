@@ -103,6 +103,23 @@ git push
 Database changes in new versions (such as the visit counter) are applied automatically when the
 app starts, and existing records are kept.
 
+## 6b. Daily backups to GitHub
+
+Admin → **Backups** has the full setup steps. In short:
+1. Create a **private** GitHub repository for backups (e.g. `rgfp-backups`), with a README.
+   Never use the app's code repository; it is public.
+2. Create a fine-grained token with access to **only that repository** and **Contents: Read and write**.
+3. In Admin → Backups, enter the repository and token, pick a time, turn on **Daily backups**,
+   then **Save → Test connection → Back up now**.
+
+The token is stored encrypted using `RGFP_SECRET_KEY`. The Blueprint creates that key the first time
+you **Manual sync** after updating `render.yaml`. Backups refuse to write to a public repository.
+On the free plan, a backup missed while the app slept runs the next time someone opens the app.
+
+**Restoring**, for example when the free database expires and you create a new one: open the app on
+the new, empty database, enter the same repository and token in Admin → Backups, then use
+**Restore from a backup**. Member numbers, check-ins and signatures come back exactly.
+
 ## 7. Moving data you entered locally
 
 On your PC, go to **Admin → Export → Download** to get a CSV. On Render, go to
@@ -131,6 +148,8 @@ original numbers.
 | `RGFP_ADMIN_PASSWORD` | You | Extra lock on Admin |
 | `RGFP_KIOSK_TOKEN` | Blueprint (random) | Secret in the tablet link |
 | `RGFP_TZ` | Blueprint | Clock time zone (`America/Denver`) |
+| `RGFP_SECRET_KEY` | Blueprint (random) | Encrypts the GitHub backup token stored in the database |
+| `RGFP_GITHUB_TOKEN` | You (optional) | Backup token as a server setting instead of entering it in Admin |
 | `RGFP_MONTHLY_VISITS` | You (optional) | Visits per month before check-ins get flagged (default 3) |
 
 The shared staff password is a reasonable start. If you later want individual logins

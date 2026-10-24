@@ -160,3 +160,43 @@ def test_admin_set_visits():
     at.button(key="adm_v_set").click().run()
     assert not at.exception, at.exception
     assert visits.status(cid).remaining == 0
+
+
+# ------------------------------------------------------------- all clients --
+def test_all_clients_page_lists_and_filters():
+    from core import visits
+    repo.delete_all()
+    ids = repo.bulk_create(fake_clients(25, seed=8), "seed")
+    visits.set_remaining(ids[0], 0)
+    visits.check_in(ids[0])
+    at = _page("all_clients.py").run()
+    assert not at.exception, at.exception
+    assert len(at.dataframe[0].value) == 25
+    at.selectbox(key="ac_visits").set_value("Flagged this month").run()
+    assert list(at.dataframe[0].value["member"]) == [f"RGFP-{ids[0]:06d}"]
+    at.selectbox(key="ac_visits").set_value("All")
+    at.text_input(key="ac_text").input(f"rgfp-{ids[3]:06d}").run()
+    assert len(at.dataframe[0].value) == 1
+
+
+def test_all_clients_page_empty_db():
+    repo.delete_all()
+    at = _page("all_clients.py").run()
+    assert not at.exception, at.exception
+    assert any("No clients yet" in i.value for i in at.info)
+
+
+def test_returning_client_opens_record_requested_by_browse_page():
+    repo.delete_all()
+    cid = repo.bulk_create(fake_clients(3, seed=1), "seed")[1]
+    at = _page("returning_client.py")
+    at.session_state["rc_open_request"] = cid
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["rc_client_id"] == cid
+
+
+def test_admin_backups_tab_renders_unconfigured():
+    at = _page("admin.py").run()
+    assert not at.exception, at.exception
+    assert any(m.label == "Daily backups" and m.value == "Off" for m in at.metric)

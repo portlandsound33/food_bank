@@ -10,7 +10,7 @@ returning clients, and an Admin area for test data and CSV import from other sys
 pip install -r requirements.txt -r requirements-dev.txt
 streamlit run app.py                 # staff:  http://<host>:8501
                                      # tablet: http://<host>:8501/?kiosk=1
-python -m pytest -q                  # 31 tests incl. headless page tests
+python -m pytest -q                  # 53 tests incl. headless page tests
 DATABASE_URL=postgresql://user@host/throwaway_db python -m pytest -q   # same tests on Postgres
 ```
 
@@ -67,6 +67,14 @@ samples/legacy_export_sample.csv   messy CSV to try the importer
   still recorded but **flagged**. Every check-in is logged in a `checkins` table (`core/visits.py`).
   Admin → Visits sets a client's count (e.g. 0 to test flagging), lists flagged check-ins, and can
   reset everyone. Editing the form never changes the visit count.
+* **Backups:** Admin → Backups writes a daily snapshot to a *private* GitHub repo as one commit
+  (`core/backup.py`, Git Data API in `core/github.py`): `clients.jsonl`, `checkins.jsonl`,
+  `signatures/<member>.png` (only new/changed ones are uploaded), `manifest.json`. A background thread
+  checks every 5 minutes and catches up after the app sleeps. Restore loads any past backup into an
+  empty database, keeping member numbers. The token is stored Fernet-encrypted with `RGFP_SECRET_KEY`
+  and never written into backups. Tests use an in-memory fake GitHub (`tests/fake_github.py`).
+* **All Clients** page (`app_pages/all_clients.py`): every record in a sortable table with search and
+  filters (visits status, registration date, county); clicking a row opens it on Returning Client.
 * **Schema upgrades:** new columns are added to an existing database automatically at startup
   (`core/db.py: _ADDED_COLUMNS`), so deploying a new version keeps all existing records.
 * **Two-step form:** page 1 is validated (errors and household-count warnings) before **Next**
